@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Plan alimentario Nicaragua — PAN inspirado en caso clínico (Schofield/GEB, 5 tiempos,
-ajustes por actividad, objetivo y patologías). No sustituye valoración profesional. 
+ajustes por actividad, objetivo y patologías). No sustituye valoración profesional.
 """
 import json
+import importlib
 import re
 import tkinter as tk
 from datetime import datetime
@@ -12,9 +13,9 @@ from tkinter import filedialog, messagebox, ttk
 from uuid import uuid4
 
 try:
-    from fpdf import FPDF
+    FPDF = importlib.import_module("fpdf").FPDF
     _HAS_FPDF = True
-except ImportError:
+except Exception:
     FPDF = None
     _HAS_FPDF = False
 
@@ -199,6 +200,18 @@ FACTOR_ACTIVIDAD = {
     "Intenso": 1.725,
     "Muy intenso": 1.9,
 }
+
+ENFERMEDADES_OPCIONES = [
+    ("diabetes", "Diabetes mellitus"),
+    ("hipertension", "Hipertension arterial"),
+    ("obesidad", "Obesidad"),
+    ("dislipidemia", "Dislipidemia"),
+    ("gastritis", "Gastritis / colon irritable"),
+    ("anemia", "Anemia"),
+    ("cardiovascular", "Cardiovascular (en general)"),
+    ("endocrino", "Sistema endocrino (p. ej. tiroides, etc.)"),
+    ("renal", "Sistema renal"),
+]
 
 
 def normaliza(txt):
@@ -466,300 +479,158 @@ def exportar_pdf_seguro(contenido, ruta):
     pdf.output(ruta)
 
 
-# === Paleta de colores ===
-_COL_VERDE_OSC = "#1B6B3A"   # verde oscuro — encabezados
-_COL_VERDE_MED = "#2D8F55"   # verde medio — barra título
-_COL_VERDE_CLA = "#E8F5E9"   # verde muy claro — fondo secciones
-_COL_AZUL_OSC  = "#1565C0"   # azul oscuro — botón calcular
-_COL_AZUL_CLA  = "#E3F2FD"   # azul claro — resaltado resultado
-_COL_NARANJA   = "#E65100"   # naranja — botón PDF
-_COL_GRIS_OSC  = "#424242"   # gris oscuro — texto general
-_COL_BLANCO    = "#FFFFFF"
-_COL_FONDO     = "#F5F5F5"   # gris muy claro — fondo ventana
-_COL_BARRA     = "#EEEEEE"   # barra estado
-
 # --- GUI ---
 root = tk.Tk()
-root.title("Plan Alimentario Nicaragua — PAN")
-root.geometry("1160x810")
-root.configure(bg=_COL_FONDO)
-root.resizable(True, True)
+root.title("Dieta Nicaragua — PAN (caso clínico + datos)")
+root.geometry("1100x720")
+root.configure(bg="#eef1f4")
 
-# ── Tema ttk ─────────────────────────────────────────────
-style = ttk.Style(root)
-style.theme_use("clam")
-
-style.configure(".", background=_COL_FONDO, foreground=_COL_GRIS_OSC,
-                font=("Segoe UI", 10))
-style.configure("TFrame",  background=_COL_FONDO)
-style.configure("TLabel",  background=_COL_FONDO, foreground=_COL_GRIS_OSC)
-style.configure("TCheckbutton", background=_COL_VERDE_CLA, foreground=_COL_GRIS_OSC)
-style.configure("TEntry",  fieldbackground=_COL_BLANCO, relief="flat",
-                borderwidth=1)
-style.configure("TCombobox", fieldbackground=_COL_BLANCO, relief="flat")
-
-# LabelFrame con borde verde
-style.configure("Sec.TLabelframe",
-                background=_COL_VERDE_CLA,
-                relief="groove",
-                bordercolor=_COL_VERDE_MED,
-                borderwidth=2)
-style.configure("Sec.TLabelframe.Label",
-                background=_COL_VERDE_CLA,
-                foreground=_COL_VERDE_OSC,
-                font=("Segoe UI", 10, "bold"))
-
-# Botones con colores diferenciados
-style.configure("Calcular.TButton",
-                background=_COL_AZUL_OSC, foreground=_COL_BLANCO,
-                font=("Segoe UI", 10, "bold"),
-                padding=(12, 6),
-                relief="flat")
-style.map("Calcular.TButton",
-          background=[("active", "#1976D2"), ("pressed", "#0D47A1")])
-
-style.configure("Guardar.TButton",
-                background=_COL_VERDE_MED, foreground=_COL_BLANCO,
-                font=("Segoe UI", 10),
-                padding=(10, 6),
-                relief="flat")
-style.map("Guardar.TButton",
-          background=[("active", "#388E3C"), ("pressed", "#1B6B3A")])
-
-style.configure("Historial.TButton",
-                background="#6A1B9A", foreground=_COL_BLANCO,
-                font=("Segoe UI", 10),
-                padding=(10, 6),
-                relief="flat")
-style.map("Historial.TButton",
-          background=[("active", "#7B1FA2"), ("pressed", "#4A148C")])
-
-style.configure("PDF.TButton",
-                background=_COL_NARANJA, foreground=_COL_BLANCO,
-                font=("Segoe UI", 10),
-                padding=(10, 6),
-                relief="flat")
-style.map("PDF.TButton",
-          background=[("active", "#F4511E"), ("pressed", "#BF360C")])
-
-style.configure("Cargar.TButton",
-                background="#546E7A", foreground=_COL_BLANCO,
-                font=("Segoe UI", 9),
-                padding=(6, 4),
-                relief="flat")
-style.map("Cargar.TButton",
-          background=[("active", "#607D8B"), ("pressed", "#37474F")])
-
-# ── Encabezado (banner) ───────────────────────────────────
-header_frame = tk.Frame(root, bg=_COL_VERDE_MED, height=60)
-header_frame.pack(fill=tk.X, side=tk.TOP)
-header_frame.pack_propagate(False)
-tk.Label(
-    header_frame,
-    text="🥗  Plan Alimentario Nicaragua — PAN",
-    bg=_COL_VERDE_MED, fg=_COL_BLANCO,
-    font=("Segoe UI", 16, "bold"),
-    anchor="w", padx=16,
-).pack(fill=tk.BOTH, expand=True)
-
-# ── Contenedor principal con scroll ──────────────────────
-main_container = ttk.Frame(root, padding=0)
+main_container = ttk.Frame(root, padding=12)
 main_container.pack(fill=tk.BOTH, expand=True)
 
-canvas = tk.Canvas(main_container, highlightthickness=0, bg=_COL_FONDO)
+canvas = tk.Canvas(main_container, highlightthickness=0)
 scrollbar_v = ttk.Scrollbar(main_container, orient=tk.VERTICAL, command=canvas.yview)
-scrollable = ttk.Frame(canvas)
+scrollable = ttk.Frame(canvas, padding=4)
 scrollable.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 canvas.create_window((0, 0), window=scrollable, anchor="nw")
 canvas.configure(yscrollcommand=scrollbar_v.set)
-
+canvas.configure(bg="#eef1f4")
 
 def _on_mousewheel(event):
     canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
 
 canvas.bind_all("<MouseWheel>", _on_mousewheel)
 canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 scrollbar_v.pack(side=tk.RIGHT, fill=tk.Y)
 
 mainframe = scrollable
+mainframe.columnconfigure(0, weight=1)
+mainframe.columnconfigure(1, weight=1)
 
-# ── Variables del formulario ──────────────────────────────
 nombre_var = tk.StringVar()
 peso_var = tk.StringVar()
 altura_var = tk.StringVar()
 edad_var = tk.StringVar()
-sexo_var = tk.StringVar()
+sexo_var = tk.StringVar(value="hombre")
 temporada_var = tk.StringVar(value="Verano")
 actividad_var = tk.StringVar(value="Moderado")
 objetivo_var = tk.StringVar(value="mantener")
 alergias_med_var = tk.StringVar()
 paciente_id_var = tk.StringVar()
+buscar_enf_var = tk.StringVar()
+resumen_enf_var = tk.StringVar(value="Sin enfermedades seleccionadas")
 
-diabetes_var = tk.BooleanVar()
-hta_var = tk.BooleanVar()
-obesidad_var = tk.BooleanVar()
-dislipidemia_var = tk.BooleanVar()
-gastritis_var = tk.BooleanVar()
-anemia_var = tk.BooleanVar()
-cardiovascular_var = tk.BooleanVar()
-endocrino_var = tk.BooleanVar()
-renal_var = tk.BooleanVar()
+enfermedades_seleccionadas = set()
+enfermedades_filtradas = []
 
-# ── Barra de estado (status bar) — definida antes de usarla ─
-status_var = tk.StringVar(value="Listo.")
-status_bar = tk.Label(
-    root,
-    textvariable=status_var,
-    bg=_COL_BARRA, fg=_COL_GRIS_OSC,
-    font=("Segoe UI", 9),
-    anchor="w", padx=10, relief="sunken",
+card_izq = tk.Frame(mainframe, bg="white", padx=18, pady=18, highlightbackground="#d9dde3", highlightthickness=1)
+card_der = tk.Frame(mainframe, bg="white", padx=18, pady=18, highlightbackground="#d9dde3", highlightthickness=1)
+card_izq.grid(column=0, row=0, sticky=(tk.N, tk.E, tk.W), padx=8, pady=8)
+card_der.grid(column=1, row=0, sticky=(tk.N, tk.E, tk.W), padx=8, pady=8)
+
+tk.Label(card_izq, text="Datos del paciente", bg="white", fg="#1f2937", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 15))
+tk.Label(card_der, text="Condiciones y alergias", bg="white", fg="#1f2937", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 15))
+
+
+def _crear_campo(parent, text, var, width=26):
+    frame = tk.Frame(parent, bg="white")
+    frame.pack(fill=tk.X, pady=(0, 15))
+    tk.Label(frame, text=text, bg="white", fg="#374151", font=("Segoe UI", 10)).pack(anchor="w")
+    ttk.Entry(frame, textvariable=var, width=width).pack(fill=tk.X, pady=(4, 0))
+
+
+def _crear_combo(parent, text, var, values, width=24):
+    frame = tk.Frame(parent, bg="white")
+    frame.pack(fill=tk.X, pady=(0, 15))
+    tk.Label(frame, text=text, bg="white", fg="#374151", font=("Segoe UI", 10)).pack(anchor="w")
+    ttk.Combobox(frame, textvariable=var, values=values, state="readonly", width=width).pack(fill=tk.X, pady=(4, 0))
+
+
+_crear_campo(card_izq, "Nombre del paciente:", nombre_var, 32)
+
+frame_sexo = tk.Frame(card_izq, bg="white")
+frame_sexo.pack(fill=tk.X, pady=(0, 15))
+tk.Label(frame_sexo, text="Sexo:", bg="white", fg="#374151", font=("Segoe UI", 10)).pack(anchor="w")
+radios_sexo = tk.Frame(frame_sexo, bg="white")
+radios_sexo.pack(anchor="w", pady=(4, 0))
+ttk.Radiobutton(radios_sexo, text="Hombre", value="hombre", variable=sexo_var).pack(side=tk.LEFT, padx=(0, 12))
+ttk.Radiobutton(radios_sexo, text="Mujer", value="mujer", variable=sexo_var).pack(side=tk.LEFT)
+
+_crear_campo(card_izq, "[#] Edad (anos):", edad_var, 14)
+_crear_campo(card_izq, "[KG] Peso (kg):", peso_var, 14)
+_crear_campo(card_izq, "[M] Altura (m) - use punto, ej. 1.55:", altura_var, 18)
+
+_crear_combo(card_izq, "Temporada:", temporada_var, ["Verano", "Invierno"], 16)
+_crear_combo(card_izq, "Nivel de actividad fisica:", actividad_var, list(FACTOR_ACTIVIDAD.keys()), 20)
+_crear_combo(card_izq, "Objetivo:", objetivo_var, ["bajar", "mantener", "subir"], 16)
+
+frame_combo_pac = tk.Frame(card_der, bg="white")
+frame_combo_pac.pack(fill=tk.X, pady=(0, 15))
+tk.Label(frame_combo_pac, text="Paciente guardado:", bg="white", fg="#374151", font=("Segoe UI", 10)).pack(anchor="w")
+paciente_combo = ttk.Combobox(frame_combo_pac, width=42, state="readonly")
+paciente_combo.pack(fill=tk.X, pady=(4, 0))
+
+frame_buscar = tk.Frame(card_der, bg="white")
+frame_buscar.pack(fill=tk.X, pady=(0, 15))
+tk.Label(frame_buscar, text="Buscar enfermedad:", bg="white", fg="#374151", font=("Segoe UI", 10)).pack(anchor="w")
+ttk.Entry(frame_buscar, textvariable=buscar_enf_var, width=30).pack(fill=tk.X, pady=(4, 0))
+
+frame_lista_enf = tk.Frame(card_der, bg="white")
+frame_lista_enf.pack(fill=tk.BOTH, pady=(0, 8))
+scroll_enf = ttk.Scrollbar(frame_lista_enf, orient=tk.VERTICAL)
+enfermedades_listbox = tk.Listbox(
+    frame_lista_enf,
+    selectmode=tk.MULTIPLE,
+    height=8,
+    exportselection=False,
+    yscrollcommand=scroll_enf.set,
 )
-status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+scroll_enf.config(command=enfermedades_listbox.yview)
+enfermedades_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+scroll_enf.pack(side=tk.RIGHT, fill=tk.Y)
+
+tk.Label(card_der, textvariable=resumen_enf_var, bg="white", fg="#4b5563", justify=tk.LEFT, wraplength=420).pack(anchor="w", pady=(0, 15))
+
+_crear_campo(card_der, "Alergias a medicamentos (texto libre):", alergias_med_var, 44)
+_crear_campo(card_der, "ID paciente (opcional; se asigna al guardar):", paciente_id_var, 36)
 
 
-def _set_status(msg, color=_COL_GRIS_OSC):
-    status_var.set(msg)
-    status_bar.configure(fg=color)
+def _actualizar_resumen_enfermedades():
+    if not enfermedades_seleccionadas:
+        resumen_enf_var.set("Sin enfermedades seleccionadas")
+        return
+    etiquetas = [txt for key, txt in ENFERMEDADES_OPCIONES if key in enfermedades_seleccionadas]
+    resumen_enf_var.set("Seleccionadas: " + ", ".join(etiquetas))
 
 
-# ── Fila 0: sección superior — dos columnas ───────────────
-top_frame = ttk.Frame(mainframe, padding=(10, 10, 10, 4))
-top_frame.grid(column=0, row=0, columnspan=2, sticky=(tk.W, tk.E))
-top_frame.columnconfigure(0, weight=1)
-top_frame.columnconfigure(1, weight=1)
-
-# ── LabelFrame: Datos del paciente ───────────────────────
-lf_datos = ttk.LabelFrame(top_frame, text=" Datos del paciente ", style="Sec.TLabelframe",
-                           padding=(12, 8))
-lf_datos.grid(column=0, row=0, sticky=(tk.N, tk.W, tk.E), padx=(0, 8))
-
-_PAD = {"padx": 4, "pady": 3}
-
-
-def _lbl_entry(parent, text, var, width=22, row_n=0):
-    ttk.Label(parent, text=text, background=_COL_VERDE_CLA).grid(
-        column=0, row=row_n, sticky=tk.W, **_PAD)
-    ttk.Entry(parent, textvariable=var, width=width).grid(
-        column=1, row=row_n, sticky=tk.W, **_PAD)
+def _actualizar_lista_enfermedades(*_):
+    nonlocal_ref = ENFERMEDADES_OPCIONES
+    filtro = normaliza(buscar_enf_var.get().strip())
+    enfermedades_listbox.delete(0, tk.END)
+    enfermedades_filtradas.clear()
+    for key, txt in nonlocal_ref:
+        if filtro and filtro not in normaliza(txt):
+            continue
+        enfermedades_filtradas.append((key, txt))
+        enfermedades_listbox.insert(tk.END, txt)
+    for idx, (key, _) in enumerate(enfermedades_filtradas):
+        if key in enfermedades_seleccionadas:
+            enfermedades_listbox.selection_set(idx)
+    _actualizar_resumen_enfermedades()
 
 
-_lbl_entry(lf_datos, "Nombre del paciente:", nombre_var, 28, 0)
-_lbl_entry(lf_datos, "Peso (kg):", peso_var, 12, 1)
-_lbl_entry(lf_datos, "Altura (m)  ej. 1.55:", altura_var, 12, 2)
-_lbl_entry(lf_datos, "Edad (años):", edad_var, 8, 3)
-_lbl_entry(lf_datos, "Sexo (hombre / mujer):", sexo_var, 12, 4)
+def _on_select_enfermedades(_event=None):
+    visibles = {key for key, _ in enfermedades_filtradas}
+    enfermedades_seleccionadas.difference_update(visibles)
+    for idx in enfermedades_listbox.curselection():
+        if 0 <= idx < len(enfermedades_filtradas):
+            enfermedades_seleccionadas.add(enfermedades_filtradas[idx][0])
+    _actualizar_resumen_enfermedades()
 
-# Cargar paciente guardado
-ttk.Label(lf_datos, text="Cargar paciente guardado:", background=_COL_VERDE_CLA).grid(
-    column=0, row=5, sticky=tk.W, **_PAD)
-_frame_pac = ttk.Frame(lf_datos, style="Sec.TLabelframe")
-_frame_pac.grid(column=1, row=5, sticky=tk.W, **_PAD)
-paciente_combo = ttk.Combobox(_frame_pac, width=30, state="readonly")
-paciente_combo.pack(side=tk.LEFT)
 
-ttk.Label(lf_datos, text="ID paciente (asignado al guardar):", background=_COL_VERDE_CLA).grid(
-    column=0, row=6, sticky=tk.W, **_PAD)
-ttk.Entry(lf_datos, textvariable=paciente_id_var, width=28).grid(
-    column=1, row=6, sticky=tk.W, **_PAD)
-
-# ── LabelFrame: Configuración del plan ───────────────────
-lf_conf = ttk.LabelFrame(top_frame, text=" Configuración del plan ", style="Sec.TLabelframe",
-                          padding=(12, 8))
-lf_conf.grid(column=1, row=0, sticky=(tk.N, tk.W, tk.E))
-
-ttk.Label(lf_conf, text="Temporada:", background=_COL_VERDE_CLA).grid(
-    column=0, row=0, sticky=tk.W, **_PAD)
-ttk.Combobox(lf_conf, textvariable=temporada_var,
-             values=["Verano", "Invierno"], state="readonly", width=16).grid(
-    column=1, row=0, sticky=tk.W, **_PAD)
-
-ttk.Label(lf_conf, text="Actividad física:", background=_COL_VERDE_CLA).grid(
-    column=0, row=1, sticky=tk.W, **_PAD)
-ttk.Combobox(lf_conf, textvariable=actividad_var,
-             values=list(FACTOR_ACTIVIDAD.keys()), state="readonly", width=16).grid(
-    column=1, row=1, sticky=tk.W, **_PAD)
-
-ttk.Label(lf_conf, text="Objetivo:", background=_COL_VERDE_CLA).grid(
-    column=0, row=2, sticky=tk.W, **_PAD)
-ttk.Combobox(lf_conf, textvariable=objetivo_var,
-             values=["bajar", "mantener", "subir"], state="readonly", width=16).grid(
-    column=1, row=2, sticky=tk.W, **_PAD)
-
-ttk.Label(lf_conf, text="Alergias / medicamentos:", background=_COL_VERDE_CLA).grid(
-    column=0, row=3, sticky=tk.W, **_PAD)
-ttk.Entry(lf_conf, textvariable=alergias_med_var, width=28).grid(
-    column=1, row=3, sticky=tk.W, **_PAD)
-
-# ── LabelFrame: Enfermedades / condiciones ────────────────
-lf_enf = ttk.LabelFrame(top_frame, text=" Enfermedades / condiciones ", style="Sec.TLabelframe",
-                         padding=(12, 8))
-lf_enf.grid(column=1, row=1, sticky=(tk.N, tk.W, tk.E), pady=(8, 0))
-
-_ENF_ITEMS = [
-    ("Diabetes mellitus", diabetes_var),
-    ("Hipertensión arterial", hta_var),
-    ("Obesidad", obesidad_var),
-    ("Dislipidemia", dislipidemia_var),
-    ("Gastritis / colon irritable", gastritis_var),
-    ("Anemia", anemia_var),
-    ("Cardiovascular (en general)", cardiovascular_var),
-    ("Sistema endocrino (tiroides, etc.)", endocrino_var),
-    ("Sistema renal", renal_var),
-]
-for _r, (_txt, _var) in enumerate(_ENF_ITEMS):
-    ttk.Checkbutton(lf_enf, text=_txt, variable=_var).grid(
-        column=0, row=_r, sticky=tk.W, pady=1)
-
-# ── Botones ───────────────────────────────────────────────
-btn_frame = ttk.Frame(mainframe, padding=(10, 6))
-btn_frame.grid(column=0, row=1, columnspan=2, sticky=(tk.W, tk.E))
-
-_btn_calcular  = ttk.Button(btn_frame, text="▶  Calcular plan",  style="Calcular.TButton")
-_btn_guardar   = ttk.Button(btn_frame, text="💾  Guardar paciente", style="Guardar.TButton")
-_btn_historial = ttk.Button(btn_frame, text="📋  Añadir al historial", style="Historial.TButton")
-_btn_pdf       = ttk.Button(btn_frame, text="📄  Exportar PDF",    style="PDF.TButton")
-for _b in (_btn_calcular, _btn_guardar, _btn_historial, _btn_pdf):
-    _b.pack(side=tk.LEFT, padx=(0, 8))
-
-# ── Área de resultado ─────────────────────────────────────
-res_frame = ttk.LabelFrame(mainframe, text=" Resultado del plan ", style="Sec.TLabelframe",
-                            padding=(8, 6))
-res_frame.grid(column=0, row=2, columnspan=2, sticky=(tk.W, tk.E), padx=10, pady=(0, 6))
-res_frame.columnconfigure(0, weight=1)
-
-resultado_text = tk.Text(
-    res_frame,
-    width=110, height=26,
-    wrap="word",
-    state="disabled",
-    font=("Consolas", 9),
-    bg="#FAFFFE",
-    fg=_COL_GRIS_OSC,
-    relief="flat",
-    borderwidth=1,
-    selectbackground=_COL_AZUL_CLA,
-)
-_scroll_res = ttk.Scrollbar(res_frame, orient=tk.VERTICAL,
-                             command=resultado_text.yview)
-resultado_text.configure(yscrollcommand=_scroll_res.set)
-resultado_text.grid(column=0, row=0, sticky=(tk.W, tk.E))
-_scroll_res.grid(column=1, row=0, sticky=tk.NS)
-
-# Tags de color para secciones del resultado
-resultado_text.tag_configure("titulo",
-                              font=("Consolas", 10, "bold"),
-                              foreground=_COL_VERDE_OSC)
-resultado_text.tag_configure("seccion",
-                              font=("Consolas", 9, "bold"),
-                              foreground=_COL_AZUL_OSC)
-resultado_text.tag_configure("advertencia",
-                              foreground=_COL_NARANJA,
-                              font=("Consolas", 9, "bold"))
-resultado_text.tag_configure("normal",
-                              foreground=_COL_GRIS_OSC)
-
-ultimo_texto_resultado = {"text": ""}
+buscar_enf_var.trace_add("write", _actualizar_lista_enfermedades)
+enfermedades_listbox.bind("<<ListboxSelect>>", _on_select_enfermedades)
+_actualizar_lista_enfermedades()
 
 
 def refrescar_combo_pacientes():
@@ -788,22 +659,22 @@ def aplicar_paciente_desde_combo():
         alergias_med_var.set(p.get("alergias_medicamentos", ""))
         paciente_id_var.set(p.get("id", ""))
         fl = p.get("flags") or {}
-        diabetes_var.set(fl.get("diabetes", False))
-        hta_var.set(fl.get("hipertension", False))
-        obesidad_var.set(fl.get("obesidad", False))
-        dislipidemia_var.set(fl.get("dislipidemia", False))
-        gastritis_var.set(fl.get("gastritis", False))
-        anemia_var.set(fl.get("anemia", False))
-        cardiovascular_var.set(fl.get("cardiovascular", False))
-        endocrino_var.set(fl.get("endocrino", False))
-        renal_var.set(fl.get("renal", False))
-        _set_status(f"Paciente cargado: {p.get('nombre', '')}", _COL_VERDE_OSC)
+        enfermedades_seleccionadas.clear()
+        for key, _ in ENFERMEDADES_OPCIONES:
+            if fl.get(key, False):
+                enfermedades_seleccionadas.add(key)
+        _actualizar_lista_enfermedades()
         return
     messagebox.showwarning("Pacientes", "No se encontró el registro.")
 
 
-ttk.Button(_frame_pac, text="Cargar", style="Cargar.TButton",
-           command=aplicar_paciente_desde_combo).pack(side=tk.LEFT, padx=6)
+btn_frame = ttk.Frame(mainframe)
+btn_frame.grid(column=0, row=1, columnspan=2, pady=(8, 12), sticky=(tk.W, tk.E))
+
+resultado_text = tk.Text(mainframe, width=100, height=28, wrap="word", state="disabled")
+resultado_text.grid(column=0, row=2, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 8), padx=8)
+
+ultimo_texto_resultado = {"text": ""}
 
 
 def validar_entradas():
@@ -822,22 +693,23 @@ def validar_entradas():
     if edad < 0 or edad > 120:
         raise ValueError("Edad fuera de rango.")
     sexo = sexo_var.get().strip().lower()
-    if not sexo or sexo[0] not in ("h", "m"):
-        raise ValueError("Sexo: escriba hombre o mujer.")
+    if sexo not in ("hombre", "mujer"):
+        raise ValueError("Seleccione el sexo del paciente.")
     return nombre, peso, altura, edad, sexo
 
 
 def construir_flags():
+    seleccion = set(enfermedades_seleccionadas)
     return {
-        "diabetes": diabetes_var.get(),
-        "hipertension": hta_var.get(),
-        "obesidad": obesidad_var.get(),
-        "dislipidemia": dislipidemia_var.get(),
-        "gastritis": gastritis_var.get(),
-        "anemia": anemia_var.get(),
-        "cardiovascular": cardiovascular_var.get(),
-        "endocrino": endocrino_var.get(),
-        "renal": renal_var.get(),
+        "diabetes": "diabetes" in seleccion,
+        "hipertension": "hipertension" in seleccion,
+        "obesidad": "obesidad" in seleccion,
+        "dislipidemia": "dislipidemia" in seleccion,
+        "gastritis": "gastritis" in seleccion,
+        "anemia": "anemia" in seleccion,
+        "cardiovascular": "cardiovascular" in seleccion,
+        "endocrino": "endocrino" in seleccion,
+        "renal": "renal" in seleccion,
     }
 
 
@@ -864,31 +736,13 @@ def enfermedades_lista(flags):
     return m
 
 
-def _insertar_con_tags(text_widget, texto):
-    """Inserta el texto con etiquetas de color por sección."""
-    text_widget.config(state="normal")
-    text_widget.delete(1.0, tk.END)
-    for linea in texto.splitlines(keepends=True):
-        stripped = linea.strip()
-        if stripped.startswith("Paciente:") or stripped.startswith("====="):
-            text_widget.insert(tk.END, linea, "titulo")
-        elif stripped.startswith("---") and stripped.endswith("---"):
-            text_widget.insert(tk.END, linea, "seccion")
-        elif stripped.startswith("Día:"):
-            text_widget.insert(tk.END, linea, "seccion")
-        elif stripped.startswith(("- Limitar", "- Reducir", "- Evitar", "- Baja")):
-            text_widget.insert(tk.END, linea, "advertencia")
-        else:
-            text_widget.insert(tk.END, linea, "normal")
-    text_widget.config(state="disabled")
-
-
 def calcular_desde_formulario():
     try:
         nombre, peso, altura, edad, sexo = validar_entradas()
         temporada = temporada_var.get()
         actividad = actividad_var.get()
         objetivo = objetivo_var.get()
+
         flags = construir_flags()
         enfermedades_marcadas = enfermedades_lista(flags)
 
@@ -948,22 +802,20 @@ def calcular_desde_formulario():
             )
 
         ultimo_texto_resultado["text"] = texto
-        _insertar_con_tags(resultado_text, texto)
-        _set_status(
-            f"Plan calculado para {nombre}  |  IMC {imc:.2f} ({imc_estado})  |  {int(kcal_sugerida)} kcal/día",
-            _COL_VERDE_OSC,
-        )
+        resultado_text.config(state="normal")
+        resultado_text.delete(1.0, tk.END)
+        resultado_text.insert(tk.END, texto)
+        resultado_text.config(state="disabled")
     except ValueError as e:
         messagebox.showerror("Error de validación", str(e))
-        _set_status(f"Error: {e}", _COL_NARANJA)
     except Exception as e:
         messagebox.showerror("Error", f"{type(e).__name__}: {e}")
-        _set_status(f"Error inesperado: {e}", _COL_NARANJA)
 
 
 def guardar_paciente_actual():
     try:
         nombre, peso, altura, edad, sexo = validar_entradas()
+
     except ValueError as e:
         messagebox.showerror("Error", str(e))
         return
@@ -989,7 +841,6 @@ def guardar_paciente_actual():
     guardar_json(data)
     paciente_id_var.set(pid)
     refrescar_combo_pacientes()
-    _set_status(f"Paciente guardado: {nombre}  (ID: {pid[:8]}…)", _COL_VERDE_OSC)
     messagebox.showinfo("Guardado", f"Paciente guardado (ID: {pid[:8]}…).")
 
 
@@ -1017,7 +868,6 @@ def guardar_historial():
     }
     data.setdefault("historial", []).append(entry)
     guardar_json(data)
-    _set_status("Entrada de historial guardada.", _COL_VERDE_OSC)
     messagebox.showinfo("Historial", "Entrada de historial guardada.")
 
 
@@ -1034,21 +884,27 @@ def exportar_pdf():
         return
     try:
         exportar_pdf_seguro(ultimo_texto_resultado["text"], path)
-        _set_status(f"PDF exportado: {path}", _COL_VERDE_OSC)
         messagebox.showinfo("PDF", f"Guardado:\n{path}")
     except Exception as e:
         messagebox.showerror("PDF", str(e))
-        _set_status(f"Error al exportar PDF: {e}", _COL_NARANJA)
 
 
-# Assign commands to explicitly stored button references
-_btn_calcular.configure(command=calcular_desde_formulario)
-_btn_guardar.configure(command=guardar_paciente_actual)
-_btn_historial.configure(command=guardar_historial)
-_btn_pdf.configure(command=exportar_pdf)
-
-# Acceso rápido: Ctrl+Enter para calcular
-root.bind("<Control-Return>", lambda _e: calcular_desde_formulario())
+ttk.Button(btn_frame, text="Cargar paciente seleccionado", command=aplicar_paciente_desde_combo).pack(side=tk.LEFT, padx=4)
+tk.Button(
+    btn_frame,
+    text="Calcular plan",
+    command=calcular_desde_formulario,
+    bg="#2563eb",
+    fg="white",
+    activebackground="#1d4ed8",
+    activeforeground="white",
+    relief=tk.FLAT,
+    padx=14,
+    pady=6,
+).pack(side=tk.LEFT, padx=4)
+ttk.Button(btn_frame, text="Guardar datos", command=guardar_paciente_actual).pack(side=tk.LEFT, padx=4)
+ttk.Button(btn_frame, text="Guardar en historial", command=guardar_historial).pack(side=tk.LEFT, padx=4)
+ttk.Button(btn_frame, text="Exportar PDF", command=exportar_pdf).pack(side=tk.LEFT, padx=4)
 
 refrescar_combo_pacientes()
 
