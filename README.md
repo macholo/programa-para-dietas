@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Plan alimentario Nicaragua — PAN inspirado en caso clínico (Schofield/GEB, 5 tiempos,
-ajustes por actividad, objetivo y patologías). No sustituye valoración profesional.
+ajustes por actividad, objetivo y patologías). No sustituye valoración profesional. 
 """
 import json
 import re
